@@ -8,6 +8,8 @@ namespace SteamDepotFileVerifier
 {
     public static class SteamDepotFileVerifierProgram
     {
+        private const string DELETE_FLAG = "d";
+
         static int Main(string[] args)
         {
             Console.ForegroundColor = ConsoleColor.Blue;
@@ -22,24 +24,10 @@ namespace SteamDepotFileVerifier
             Console.WriteLine($"Steam path: {steamClient.SteamPath}");
             Console.WriteLine();
 
-            if (args.Length == 0 || !uint.TryParse(args[0], out var appid))
+            if ((args.Length > 0 && uint.TryParse(args[0], out var appid)))
             {
-                foreach (var library in steamLibraries)
-                {
-                    var manifests = Directory.GetFiles(library, "appmanifest_*.acf");
+                var deleteUnknownFiles = args.Length == 2 && args[1] == DELETE_FLAG;
 
-                    foreach (var appManifestPath in manifests)
-                    {
-                        VerifyApp(steamClient, appManifestPath);
-
-                        Console.WriteLine();
-                        Console.WriteLine("------------------------------");
-                        Console.WriteLine();
-                    }
-                }
-            }
-            else
-            {
                 Console.WriteLine($"AppID: {appid}");
 
                 var appManifestPath = steamLibraries
@@ -51,17 +39,20 @@ namespace SteamDepotFileVerifier
                     throw new FileNotFoundException("Unable to find appmanifest anywhere.");
                 }
 
-                VerifyApp(steamClient, appManifestPath);
+                VerifyApp(steamClient, appManifestPath, deleteUnknownFiles);
+
+                Console.WriteLine();
+                Console.WriteLine("If some files are listed as unknown but shouldn't be, they are probably from the SDK.");
+                Console.WriteLine("After deleting files, verify the game files in Steam.");
+
+                return 0;
             }
 
-            Console.WriteLine();
-            Console.WriteLine("If some files are listed as unknown but shouldn't be, they are probably from the SDK.");
-            Console.WriteLine("After deleting files, verify the game files in Steam.");
-
-            return 0;
+            Console.WriteLine("Usage: {appID} [d]");
+            return -1;
         }
 
-        private static void VerifyApp(SteamClientUtils steamClient, string appManifestPath)
+        private static void VerifyApp(SteamClientUtils steamClient, string appManifestPath, bool deleteUnknownFiles)
         {
             Console.WriteLine($"Parsing {appManifestPath}");
 
@@ -127,7 +118,24 @@ namespace SteamDepotFileVerifier
 
                 if (!allKnownDepotFiles.ContainsKey(unprefixedPath))
                 {
-                    Console.WriteLine($"Unknown file: {unprefixedPath}");
+                    Console.Write($"Unknown file: {unprefixedPath}");
+
+                    if (deleteUnknownFiles && !InsideWhitelist(file))
+                    {
+                        try
+                        {
+                            File.Delete(file);
+                            Console.Write(" -> [Deleted]");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("Unable to delete!");
+                            Console.WriteLine(ex);
+                        }
+                    }
+
+                    Console.WriteLine();
+
                     continue;
                 }
 
@@ -146,6 +154,16 @@ namespace SteamDepotFileVerifier
             }
 
             Console.ResetColor();
+        }
+
+        private static bool InsideWhitelist(string file)
+        {
+            if (file.Contains(@"csgo\maps\workshop"))
+            {
+                return true;
+            }
+
+            return false;
         }
     }
 }
